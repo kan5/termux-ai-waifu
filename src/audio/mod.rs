@@ -5,6 +5,7 @@
 //! linear interpolation; channel downmix averages all channels.
 
 mod resample;
+pub use resample::LinearResampler;
 
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
@@ -17,8 +18,6 @@ use tokio::sync::mpsc;
 use crate::config::AudioConfig;
 use crate::traits::{AudioCapture, AudioSink};
 use crate::types::{AudioChunk, PlaybackCommand};
-
-use resample::LinearResampler;
 
 /// Microphone capture → mono 16 kHz f32 chunks.
 pub struct CpalCapture {

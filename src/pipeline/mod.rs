@@ -289,7 +289,7 @@ fn ends_sentence(s: &str) -> bool {
 /// Strip Qwen3's `<think>…</think>` reasoning blocks from a text fragment.
 /// `in_think` persists across calls so blocks spanning chunk boundaries are
 /// handled correctly.
-fn filter_think(chunk: &str, in_think: &mut bool) -> String {
+pub(crate) fn filter_think(chunk: &str, in_think: &mut bool) -> String {
     const OPEN: &str = "<think>";
     const CLOSE: &str = "</think>";
 

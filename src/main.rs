@@ -3,6 +3,7 @@
 mod audio;
 mod config;
 mod llm;
+mod offline;
 mod pipeline;
 mod stt;
 mod text;
@@ -19,13 +20,18 @@ use anyhow::{Context, Result};
 async fn main() -> Result<()> {
     init_tracing();
 
-    let config_path = parse_args();
+    let (config_path, file_args) = parse_args();
     let config = config::Config::load(&config_path)
         .with_context(|| format!("failed to load config {}", config_path.display()))?;
 
     tracing::info!("configuration loaded: {:?}", config);
 
-    pipeline::run(config).await
+    match file_args {
+        // Offline (Termux) file pipeline: in.wav → VAD → STT → LLM → TTS → out.wav.
+        Some(file_args) => offline::run(config, file_args).await,
+        // Live CPAL pipeline (Linux).
+        None => pipeline::run(config).await,
+    }
 }
 
 fn init_tracing() {
@@ -35,15 +41,49 @@ fn init_tracing() {
     tracing_subscriber::fmt().with_env_filter(filter).init();
 }
 
-/// Returns the config path from `--config <path>`, or `config.toml`.
-fn parse_args() -> PathBuf {
+/// Parse `--config <path>`, `--file-input <wav>`, `--file-output <wav>`.
+fn parse_args() -> (PathBuf, Option<offline::FileArgs>) {
+    let mut config_path = PathBuf::from("config.toml");
+    let mut file_input: Option<PathBuf> = None;
+    let mut file_output: Option<PathBuf> = None;
+
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
-        if arg == "--config" {
-            if let Some(path) = args.next() {
-                return PathBuf::from(path);
+        match arg.as_str() {
+            "--config" => {
+                if let Some(p) = args.next() {
+                    config_path = PathBuf::from(p);
+                }
             }
+            "--file-input" => {
+                if let Some(p) = args.next() {
+                    file_input = Some(PathBuf::from(p));
+                }
+            }
+            "--file-output" => {
+                if let Some(p) = args.next() {
+                    file_output = Some(PathBuf::from(p));
+                }
+            }
+            _ => {}
         }
     }
-    PathBuf::from("config.toml")
+
+    let file_args = match (file_input, file_output) {
+        (Some(input), Some(output)) => Some(offline::FileArgs { input, output }),
+        // Only one of the two given — treat as an error at use site.
+        (Some(_input), None) => {
+            tracing::error!("--file-input given without --file-output; ignoring offline mode");
+            eprintln!("--file-input requires --file-output");
+            std::process::exit(2);
+        }
+        (None, Some(_output)) => {
+            tracing::error!("--file-output given without --file-input; ignoring offline mode");
+            eprintln!("--file-output requires --file-input");
+            std::process::exit(2);
+        }
+        (None, None) => None,
+    };
+
+    (config_path, file_args)
 }

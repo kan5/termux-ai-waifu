@@ -23,6 +23,13 @@ echo "==> Установка Rust-тулчейна и компиляторов"
 pkg install -y rust cmake clang make ninja pkg-config binutils \
     onnxruntime curl
 
+# --- Android-аудио (Termux:API + ffmpeg) ------------------------------
+# termux-microphone-record не пишет WAV/PCM (только m4a/amr/opus), поэтому
+# запись декодируется в mono 16k WAV через ffmpeg. Воспроизведение —
+# через termux-media-player (входит в termux-api).
+echo "==> Установка Termux:API и ffmpeg для аудио-I/O"
+pkg install -y termux-api ffmpeg
+
 # --- Python-сторона (TTS-сервис) --------------------------------------
 # torch и numpy ставим из репозитория Termux (предсобранный CPU-вариант),
 # НЕ через pip. robyn в Termux отсутствует, поэтому используется

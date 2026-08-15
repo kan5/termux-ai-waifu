@@ -68,6 +68,69 @@ cargo build --release
 - `gigaam-v3-e2e-ctc-Q8_0.gguf` (~272 МБ)
 - `Qwen3-0.6B-abliterated-q4_k_m.gguf` (~397 МБ)
 
+## Termux (Android)
+
+Ассистент можно собрать и запустить на телефоне в Termux. Так как CPAL на
+Android не может напрямую открыть микрофон/колонки, здесь используется
+**файловый (offline) режим**: реплика записывается через Termux:API,
+декодируется в mono 16k WAV, прогоняется по пайплайну, а ответ пишется в WAV
+и проигрывается через Termux:API.
+
+### Установка
+
+```bash
+# в Termux:
+pkg update && pkg upgrade
+pkg install rust cmake clang make ninja pkg-config binutils \
+    onnxruntime curl termux-api ffmpeg \
+    python python-torch python-numpy
+```
+
+Или одной командой:
+
+```bash
+./setup_termux.sh build    # зависимости + cargo build --release
+./setup_termux.sh models   # скачать модели
+```
+
+> **torch ставится через `pkg`, не через pip.** В Termux `python-torch`
+> (CPU-only, ~aarch64) уже включает `python-numpy`. Никакого venv не нужно.
+
+### Запуск (файловый режим)
+
+Реплику записывает `termux-microphone-record` (формат m4a — он не умеет
+WAV/PCM), поэтому вход декодируется в mono 16k через ffmpeg.
+
+```bash
+# 1) TTS-сервис (Python) в отдельном терминале:
+python tts_service/service.py --host 127.0.0.1 --port 8090
+
+# 2) цикл запись → ответ → воспроизведение:
+./termux_voice.sh once     # один раз
+./termux_voice.sh loop     # бесконечно
+```
+
+Вручную, без скрипта:
+
+```bash
+termux-microphone-record -f input.m4a -e aac -r 16000 -c 1   # Ctrl-C = стоп
+ffmpeg -y -v error -i input.m4a -ar 16000 -ac 1 input.wav
+
+./target/release/voice-assistant \
+    --config config.toml --file-input input.wav --file-output output.wav
+
+termux-media-player play output.wav
+```
+
+Замечания для Termux:
+
+- `config.toml` содержит `input_sample_rate = 32000` — это костыль под
+  Logitech-вебкамеру на Linux. На телефоне он не нужен; при желании закомментируйте.
+- Модели (~670 МБ суммарно) и бинарь должны лежать на устройстве
+  (скачайте через `./download_models.sh all` либо скопируйте с машины).
+- TTS-сервис работает на CPU — на слабом телефоне ответ может генерироваться
+  медленно (это ожидаемо).
+
 ## TTS-сервис (Python)
 
 ```bash
