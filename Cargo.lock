@@ -2080,6 +2080,7 @@ dependencies = [
  "cpal",
  "encoding_rs",
  "hound",
+ "libloading",
  "llama-cpp-2",
  "llama-cpp-sys-2",
  "ndarray",

@@ -31,28 +31,34 @@ anyhow = "1"
 thiserror = "2"
 
 # --- Native ML backends (enabled one at a time, see phases) ---
+# STT — pinned commit; default-features off to skip the macOS-only `metal` backend.
+transcribe-cpp = { git = "https://github.com/handy-computer/transcribe.cpp.git", rev = "856d7c10a1a864b900e066b7c9801edf373f5148", package = "transcribe-cpp", default-features = false }
+# VAD tensor handling (used by src/vad).
+ndarray = "0.16"
+# UTF-8 incremental decoder used by both LLM backends (qwen.rs / native.rs).
+encoding_rs = "0.8"
+
+# Dynamic loading of the system libllama.so on Android/Termux (native LLM
+# backend). On desktop llama-cpp-2 is used instead, but this crate is harmless.
+libloading = "0.8"
+
+# --- Desktop-only native backends ---
+# llama-cpp-2 / llama-cpp-sys-2 are NOT available on Android/Termux: the -sys
+# crate's build.rs requires the Android NDK on aarch64-linux-android (any
+# version), which Termux does not ship. On Android we use the system libllama.so
+# via `native.rs` instead, so these crates are excluded from that target.
+[target.'cfg(not(target_os = "android"))'.dependencies]
 # LLM — pin exact versions together with Cargo.lock.
 llama-cpp-2 = "=0.1.153"
 # The -sys crate must match exactly: 0.1.154 changed the FFI struct layout and
 # breaks the 0.1.153 wrapper (use_mmap/use_mlock fields removed upstream).
 llama-cpp-sys-2 = "=0.1.153"
-encoding_rs = "0.8"
-# STT — pinned commit; default-features off to skip the macOS-only `metal` backend.
-transcribe-cpp = { git = "https://github.com/handy-computer/transcribe.cpp.git", rev = "856d7c10a1a864b900e066b7c9801edf373f5148", package = "transcribe-cpp", default-features = false }
-# VAD tensor handling (used by src/vad).
-ndarray = "0.16"
-
-# VAD — ort version taken from the current Silero VAD Rust example Cargo.toml.
-# On desktop we keep the default `download-binaries` feature (ort fetches a
-# prebuilt ONNX Runtime). On Android/Termux that feature's build script calls
-# `dirs::cache_dir`, which is only defined for linux/macos/windows and fails to
-# compile on `aarch64-linux-android`. So on Android we switch to `load-dynamic`
-# and load the system `libonnxruntime.so` (installed via `pkg install
-# onnxruntime`) through dlopen instead.
-[target.'cfg(not(target_os = "android"))'.dependencies]
+# ort — see comment above: desktop keeps download-binaries (prebuilt ORT).
 ort = { version = "=2.0.0-rc.10", features = ["ndarray"] }
 
+# --- Android/Termux-only native backends ---
 [target.'cfg(target_os = "android")'.dependencies]
+# ort: load-dynamic loads the system libonnxruntime.so (onnxruntime pkg) via dlopen.
 ort = { version = "=2.0.0-rc.10", default-features = false, features = ["ndarray", "load-dynamic"] }
 
 [profile.release]
