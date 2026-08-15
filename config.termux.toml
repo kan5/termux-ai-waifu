@@ -22,9 +22,11 @@ language = "ru"
 partial_interval_ms = 500
 
 [llm]
-model_path = "models/Qwen3-0.6B-abliterated-q4_k_m.gguf"
+# Qwen2.5-0.5B-Instruct — non-reasoning, answers immediately (no think block),
+# much faster than Qwen3-0.6B on a phone CPU.
+model_path = "models/qwen2.5-0.5b-instruct-q4_k_m.gguf"
 n_ctx = 2048
-max_tokens = 128
+max_tokens = 64
 temperature = 0.7
 system_prompt = "Ты — голосовой ассистент. Отвечай кратко, на русском, без разметки."
 chunk_char_target = 160
