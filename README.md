@@ -6,7 +6,7 @@
 Микрофон → VAD (Silero) → STT (GigaAM) → LLM (Qwen) → TTS (Silero) → аудиовыход
 ```
 
-![Схема голосового ассистента](docs/voice-assistant.png)
+![Схема голосового ассистента](docs/voice-assistant.webp)
 
 Работает на Linux (CPAL) и в Termux/Android (нативный AAudio, потоковый режим).
 Внутренний формат аудио — mono / 16 kHz / f32.
