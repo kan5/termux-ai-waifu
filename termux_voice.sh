@@ -15,7 +15,7 @@ cd "$(dirname "$0")"
 
 WORKDIR="${WORKDIR:-/data/data/com.termux/files/home/va_tmp}"
 mkdir -p "$WORKDIR"
-RAW="$WORKDIR/input.m4a"
+RAW="$WORKDIR/input.opus"
 IN="$WORKDIR/input.wav"
 OUT="$WORKDIR/output.wav"
 # Auto-stop recording after this many seconds (0 = unlimited, stop with Ctrl-C).
@@ -29,9 +29,13 @@ record() {
     # previous recording (in case the loop was interrupted mid-record).
     termux-microphone-record -q 2>/dev/null || true
     rm -f "$RAW" "$IN" "$OUT"
-    # termux-microphone-record writes compressed m4a (no WAV/PCM support); we
-    # decode to mono 16k WAV afterwards. -l auto-stops after RECORD_LIMIT sec.
-    termux-microphone-record -f "$RAW" -e aac -r 16000 -c 1 -l "$RECORD_LIMIT"
+    # Recording runs in the background; we then stop it with `-q`. Stopping via
+    # `-q` calls mediaRecorder.stop() and finalizes the container, whereas the
+    # `-l <sec>` auto-limit does NOT finalize (moov atom missing / empty ogg).
+    termux-microphone-record -f "$RAW" -e opus -r 16000 -c 1 >/dev/null 2>&1 &
+    sleep "$RECORD_LIMIT"
+    termux-microphone-record -q >/dev/null 2>&1 || true
+    sleep 1
 }
 
 run_offline() {
