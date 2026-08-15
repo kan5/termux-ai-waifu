@@ -23,6 +23,8 @@ OUT="$WORKDIR/output.wav"
 RECORD_LIMIT="${RECORD_LIMIT:-4}"
 
 record() {
+    local t0 t1
+    t0=$SECONDS
     echo "▶ Говорите $RECORD_LIMIT с..."
     # termux-microphone-record refuses to start if the file already exists, and
     # the loop reuses the same names — remove stale files first. Also stop any
@@ -36,13 +38,19 @@ record() {
     sleep "$RECORD_LIMIT"
     termux-microphone-record -q >/dev/null 2>&1 || true
     sleep 1
+    t1=$SECONDS
+    echo "  [замер] запись: $((t1-t0))с"
 }
 
 run_offline() {
+    local t0 t1 t2 t3
+    t0=$SECONDS
     echo "▷ Декодирование в mono 16k WAV (с усилением)..."
-    # -af volume=10dB: phone mics are quiet; boost so Silero VAD (threshold 0.5)
-    # reliably detects speech.
-    ffmpeg -y -v error -i "$RAW" -ar 16000 -ac 1 -af "volume=10dB" "$IN"
+    # -af volume=6dB: phone mics are quiet; a modest boost so Silero VAD
+    # detects speech, without over-amplifying noise/echo into false triggers.
+    ffmpeg -y -v error -i "$RAW" -ar 16000 -ac 1 -af "volume=6dB" "$IN"
+    t1=$SECONDS
+    echo "  [замер] ffmpeg декод: $((t1-t0))с"
 
     echo "▷ Распознавание + ответ (VAD→STT→LLM→TTS)..."
     # TTS-сервис должен быть запущен (./setup_termux.sh tts; python tts_service/service.py ...)
@@ -52,12 +60,23 @@ run_offline() {
         --config config.termux.toml \
         --file-input "$IN" \
         --file-output "$OUT"
+    t2=$SECONDS
+    echo "  [замер] бинарь (STT+LLM+TTS): $((t2-t1))с"
 
     echo "▶ Проигрывание ответа..."
     # Play only if the reply was actually produced this round (it's skipped when
     # the previous step errored, e.g. no speech detected).
     if [[ -s "$OUT" ]]; then
+        # termux-media-player plays async and returns immediately, so wait for
+        # the audio to finish before we start recording again — otherwise the
+        # mic hears our own reply and triggers an echo loop.
+        local dur
+        dur=$(ffprobe -v error -show_entries format=duration -of default=nw=1:nokey=1 "$OUT" 2>/dev/null || echo 0)
         termux-media-player play "$OUT"
+        # Give the player a moment to start, then wait out the audio length.
+        sleep 0.5
+        sleep "${dur%.*}"
+        echo "  [замер] воспроизведение: ~${dur%.*}с"
     else
         echo "⚠ Ответ не сформирован — пропускаю проигрывание."
     fi
