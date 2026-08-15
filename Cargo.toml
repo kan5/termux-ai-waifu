@@ -13,9 +13,6 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 toml = "1"
 
-# WAV read/write for the offline (file-based) Termux pipeline.
-hound = "3.5"
-
 # HTTP client for Python TTS service
 reqwest = { version = "0.13", default-features = false, features = ["json"] }
 

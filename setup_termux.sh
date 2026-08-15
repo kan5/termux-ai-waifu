@@ -59,8 +59,8 @@ tts() {
 run() {
     echo "Бинарь соберите на десктопе (./build_termux_cross.sh) и скопируйте в Termux."
     echo "Затем:"
-    echo "  1) TTS-сервис:        python tts_service/service.py --host 127.0.0.1 --port 8090"
-    echo "  2) потоковый режим:   LD_LIBRARY_PATH=\"\$(pwd)\" ./voice-assistant-android --stream --config config.termux.toml"
+    echo "  1) TTS-сервис:      python tts_service/service.py --host 127.0.0.1 --port 8090"
+    echo "  2) потоковый режим: cd ~/va && LD_LIBRARY_PATH=\"\$(pwd)\" ./voice-assistant --config config.termux.toml"
 }
 
 case "${1:-deps}" in

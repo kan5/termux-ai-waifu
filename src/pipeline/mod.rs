@@ -290,7 +290,7 @@ fn ends_sentence(s: &str) -> bool {
 /// `in_think` persists across calls so blocks spanning chunk boundaries are
 /// handled correctly.
 ///
-/// NOTE: the implementation now lives in [`crate::text::filter_think`] so it can
-/// be shared with the offline (file-based) pipeline that runs on Android, where
-/// this whole audio/pipeline module is compiled out.
+/// NOTE: the implementation lives in [`crate::text::filter_think`] so it can be
+/// shared with the streaming (AAudio) pipeline on Android, where this whole
+/// audio/pipeline module is compiled out.
 pub(crate) use crate::text::filter_think;
