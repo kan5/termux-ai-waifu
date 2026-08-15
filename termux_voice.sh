@@ -54,7 +54,13 @@ run_offline() {
         --file-output "$OUT"
 
     echo "▶ Проигрывание ответа..."
-    termux-media-player play "$OUT"
+    # Play only if the reply was actually produced this round (it's skipped when
+    # the previous step errored, e.g. no speech detected).
+    if [[ -s "$OUT" ]]; then
+        termux-media-player play "$OUT"
+    else
+        echo "⚠ Ответ не сформирован — пропускаю проигрывание."
+    fi
 }
 
 one() {
