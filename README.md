@@ -131,6 +131,23 @@ termux-media-player play output.wav
 - TTS-сервис работает на CPU — на слабом телефоне ответ может генерироваться
   медленно (это ожидаемо).
 
+### LLM (llama.cpp) на Termux
+
+LLM-бэкенд через крейт `llama-cpp-2` в Termux **не собирается**: его build.rs
+на `aarch64-linux-android` требует Android NDK (которого в Termux нет), в любой
+версии (в т.ч. 0.1.154). Вместо этого используется **системный нативный
+`libllama.so`** из пакета `llama-cpp` (предсобран под Termux, без NDK):
+
+```bash
+pkg install llama-cpp
+# затем Rust-бинарь линкуется с $PREFIX/lib/libllama.so
+```
+
+Работоспособность подтверждена: `llama_ctest.py` (ctypes) грузит Qwen,
+декодирует и генерирует текст через системную библиотеку (llama.cpp 0.18.1,
+новое разделение model/vocab). Соответствующая Rust FFI-обёртка — в работе;
+VAD/STT/TTS при этом уже работают на устройстве.
+
 ## TTS-сервис (Python)
 
 Сервис использует только stdlib (`http.server.ThreadingHTTPServer`), поэтому
