@@ -10,10 +10,11 @@
 
 | Компонент | Технология | Модель |
 |-----------|-----------|--------|
-| Audio I/O | CPAL 0.18 | — |
+| Audio I/O (Linux) | CPAL 0.18 | — |
+| Audio I/O (Termux) | Android AAudio (нативный) | — |
 | VAD | Silero VAD (ONNX Runtime, `ort`) | `silero_vad.onnx` |
 | STT | transcribe.cpp (Rust bindings) | GigaAM v3 e2e-CTC Q8_0 |
-| LLM | llama.cpp (`llama-cpp-2`) | Qwen3-0.6B-abliterated q4_k_m |
+| LLM | llama.cpp (`llama-cpp-2`) | Qwen2.5-0.5B-Instruct q4_k_m (Termux) / Qwen3-0.6B (Linux) |
 | TTS | Python-сервис (stdlib HTTP + Silero) | `v5_5_ru` |
 
 Внутренний формат аудио — mono / 16 kHz / f32.
@@ -22,12 +23,17 @@
 
 ```
 src/
-├── audio/      CPAL захват + воспроизведение, ресемплинг
+├── audio/      CPAL захват + воспроизведение, ресемплинг (Linux)
+├── aaudio/     нативный AAudio: захват + воспроизведение (Termux)
 ├── vad/        Silero VAD (орт-обёртка + стейт-машина)
 ├── stt/        transcribe.cpp (partial transcripts)
 ├── llm/        llama.cpp (потоковая генерация)
 ├── tts/        HTTP-клиент к Python-сервису
-├── pipeline/   оркестрация на Tokio-каналах + barge-in
+├── pipeline/   оркестрация на Tokio-каналах + barge-in (Linux)
+├── stream/     потоковый цикл VAD→STT→LLM→TTS на AAudio (Termux)
+├── offline/    файловый режим in.wav→...→out.wav (Termux, запасной)
+├── resample/   линейный ресемплер mono f32
+├── text/       нормализация цифр + фильтр think-блоков
 ├── traits.rs   контракты компонентов (граница заменяемости)
 ├── types.rs    общие типы (AudioChunk, события)
 └── config.rs   TOML-конфигурация
@@ -66,72 +72,80 @@ cargo build --release
 Скачивает в `models/`:
 - `silero_vad.onnx` (~2 МБ)
 - `gigaam-v3-e2e-ctc-Q8_0.gguf` (~272 МБ)
-- `Qwen3-0.6B-abliterated-q4_k_m.gguf` (~397 МБ)
+- `Qwen3-0.6B-abliterated-q4_k_m.gguf` (~397 МБ) — для Linux
+
+Для Termux используется быстрая non-reasoning модель **Qwen2.5-0.5B-Instruct** —
+её надо скачать отдельно (отвечает ~в 4 раза быстрее Qwen3, без блока
+размышлений). Путь к ней задаётся в `config.termux.toml`:
+
+```bash
+curl -L --fail -o models/qwen2.5-0.5b-instruct-q4_k_m.gguf \
+    "https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/qwen2.5-0.5b-instruct-q4_k_m.gguf"
+```
 
 ## Termux (Android)
 
-Ассистент можно собрать и запустить на телефоне в Termux. Так как CPAL на
-Android не может напрямую открыть микрофон/колонки, здесь используется
-**файловый (offline) режим**: реплика записывается через Termux:API,
-декодируется в mono 16k WAV, прогоняется по пайплайну, а ответ пишется в WAV
-и проигрывается через Termux:API.
+Ассистент работает на телефоне в Termux. Так как CPAL на Android не может
+открыть микрофон/колонки, используется **нативный аудио через Android AAudio**,
+встроенный прямо в бинарь. Это даёт **потоковый режим**: микрофон непрерывно
+пишет PCM в бинарь, VAD по чанкам 30 мс сам определяет начало и конец речи
+(авто-стоп по тишине), и ответ озвучивается через AAudio же. Никаких временных
+файлов и termux-microphone-record не нужно.
 
 ### Установка
 
 ```bash
 # в Termux:
 pkg update && pkg upgrade
-pkg install rust cmake clang make ninja pkg-config binutils \
-    onnxruntime curl termux-api ffmpeg \
+pkg install onnxruntime curl \
     python python-torch python-numpy
-```
-
-Или одной командой:
-
-```bash
-./setup_termux.sh build    # зависимости + cargo build --release
-./setup_termux.sh models   # скачать модели
 ```
 
 > **torch ставится через `pkg`, не через pip.** В Termux `python-torch`
 > (CPU-only, ~aarch64) уже включает `python-numpy`. Никакого venv не нужно.
 
-### Запуск (файловый режим)
+**Бинарь собирается на десктопе кросс-компиляцией** (см. ниже) и копируется в
+Termux. Внутри Termux его не собрать — `llama-cpp-2` требует Android NDK,
+которого в Termux нет.
 
-Реплику записывает `termux-microphone-record` (формат m4a — он не умеет
-WAV/PCM), поэтому вход декодируется в mono 16k через ffmpeg.
+### Запуск (потоковый режим, рекомендуется)
 
 ```bash
 # 1) TTS-сервис (Python) в отдельном терминале:
 python tts_service/service.py --host 127.0.0.1 --port 8090
 
-# 2) цикл запись → ответ → воспроизведение:
-./termux_voice.sh once     # один раз
-./termux_voice.sh loop     # бесконечно
+# 2) потоковый цикл (говори — телефон отвечает):
+LD_LIBRARY_PATH="$(pwd)" ./voice-assistant-android --stream \
+    --config config.termux.toml
 ```
 
-Вручную, без скрипта:
+`--stream` можно опустить — на Termux это режим по умолчанию.
+
+### Запуск (файловый режим, запасной)
+
+Одноразовая реплика через файлы (если AAudio недоступен):
 
 ```bash
-termux-microphone-record -f input.m4a -e aac -r 16000 -c 1   # Ctrl-C = стоп
-ffmpeg -y -v error -i input.m4a -ar 16000 -ac 1 input.wav
-
-./target/release/voice-assistant \
-    --config config.toml --file-input input.wav --file-output output.wav
-
-termux-media-player play output.wav
+./termux_voice.sh once     # один раз
+./termux_voice.sh loop     # бесконечно (термин-запись → ответ → воспроизведение)
 ```
+
+`termux_voice.sh` использует `termux-microphone-record` (только m4a/amr/opus —
+не WAV), декодирует через ffmpeg в mono 16k, прогоняет пайплайн и играет ответ
+через `termux-media-player`.
 
 Замечания для Termux:
 
-- `config.toml` содержит `input_sample_rate = 32000` — это костыль под
-  Logitech-вебкамеру на Linux. На телефоне он не нужен; при желании закомментируйте.
-- Модели (~670 МБ суммарно) и бинарь должны лежать на устройстве
-  (скачайте через `./download_models.sh all` либо скопируйте с машины).
-- TTS-сервис работает на CPU — на слабом телефоне ответ может генерироваться
-  медленно (это ожидаемо).
+- `config.termux.toml` — конфиг для телефона: `vad.threshold = 0.5`,
+  `llm.max_tokens = 64`, модель `qwen2.5-0.5b-instruct-q4_k_m.gguf`. В нём нет
+  костыля `input_sample_rate` (он есть только в `config.toml` под
+  Logitech-вебкамеру на Linux).
+- Модели и бинарь должны лежать на устройстве (см. раздел «Модели» и
+  «Кросс-компиляция» ниже).
+- TTS-сервис работает на CPU — на слабом телефоне синтез может занимать
+  заметное время (это ожидаемо).
 
-### LLM (llama.cpp) на Termux
+### LLM (llama.cpp) на Termux: кросс-компиляция
 
 LLM-бэкенд через крейт `llama-cpp-2` **нельзя собрать внутри Termux**: его
 build.rs на `aarch64-linux-android` требует Android NDK (которого в Termux
@@ -139,36 +153,48 @@ build.rs на `aarch64-linux-android` требует Android NDK (которог
 **кросс-компиляцией на десктопе** с Android NDK, а готовый ELF кладётся в
 Termux. Требование NDK при этом удовлетворяется (NDK есть на хосте).
 
+Самый простой путь — скрипт `build_termux_cross.sh` (сам находит NDK, ставит
+rust-target при необходимости, делает стабы `libpthread.so`/`libaaudio.so` для
+линковки и кладёт NDK-версию `libc++_shared.so` рядом с бинарём):
+
 ```bash
 # на десктопе (Linux):
 rustup target add aarch64-linux-android
 cargo install cargo-ndk
-# скачать Android NDK (напр. r27c) в ~/Android/Sdk/ и:
+# скачать Android NDK (напр. r27c) в ~/Android/Sdk/ и указать:
+export ANDROID_NDK_ROOT=~/Android/Sdk/android-ndk-r27c
+./build_termux_cross.sh
+# результат: target/aarch64-linux-android/release/voice-assistant
+#   + libc++_shared.so рядом
+```
+
+Вручную через `cargo ndk`:
+
+```bash
 export ANDROID_NDK_ROOT=~/Android/Sdk/android-ndk-r27c
 # -P 24 (Android 7.0): bionic exposes POSIX_MADV_* only when __ANDROID_API__ >= 23
-cargo ndk -t arm64-v8a -P 24 -o android-build build --release
-# результат: android-build/arm64-v8a/release/voice-assistant
+cargo ndk -t arm64-v8a -P 24 build --release
 ```
 
 Замечания:
+
+- **AAudio** (`libaaudio.so`) — системная Android-либа, которой нет в NDK
+  aarch64 sysroot. Для кросс-линковки `build_termux_cross.sh` генерирует стаб с
+  нужными символами; в рантайме загружается настоящая системная либа.
+- **`libpthread.so`** — в bionic pthread встроен в libc, отдельной либы нет.
+  `transcribe-cpp` линкует `-lpthread`, поэтому скрипт кладёт пустой стаб.
 - `ort` на android использует `load-dynamic` (см. Cargo.toml): бинарь в
   рантайме dlopen'ит `libonnxruntime.so`. На устройстве он есть в
-  `$PREFIX/lib` (пакет `onnxruntime`) либо его можно положить рядом с бинарём.
-- `llama-cpp-sys-2` и `transcribe-cpp` собираются нативно через NDK-toolchain.
-- Готовый бинарь положите в `$HOME` в Termux и запускайте как обычно.
+  `$PREFIX/lib` (пакет `onnxruntime`).
 - Бинарь линкуется с `libc++_shared.so`; Termux ставит более старый libc++, чей
-  ABI не содержит некоторых символов NDK-r27. Поэтому `build_termux_cross.sh`
-  кладёт NDK-версию `libc++_shared.so` рядом с бинарём, и запускать нужно с
-  `LD_LIBRARY_PATH=<каталог с бинарём>`. То же касается `libonnxruntime.so` —
-  его удобно положить рядом (бинар ищет его относительно себя).
-- API level: `-P 24`/`ANDROID_API_LEVEL=24` обязательны — bionic открывает
-  `POSIX_MADV_*` только при `__ANDROID_API__ >= 23` (llama.cpp его использует).
+  ABI не содержит некоторых символов NDK-r27. Поэтому рядом с бинарём кладётся
+  NDK-версия `libc++_shared.so`, и запускать нужно с
+  `LD_LIBRARY_PATH=<каталог с бинарём>`.
+- `llama-cpp-sys-2` и `transcribe-cpp` собираются нативно через NDK-toolchain.
 
-Работоспособность полного пайплайна на устройстве проверена: VAD→STT→LLM→TTS
-отрабатывают и записывают ответ в WAV (см. `termux_voice.sh`).
-
-Работоспособность системной библиотеки на устройстве дополнительно проверена
-`llama_ctest.py` (ctypes против `$PREFIX/lib/libllama.so`).
+Работоспособность потокового пайплайна на устройстве проверена: AAudio-захват,
+VAD→STT→LLM→TTS и AAudio-воспроизведение отрабатывают в непрерывном цикле
+(см. раздел «Запуск (потоковый режим)»).
 
 ## TTS-сервис (Python)
 
@@ -275,10 +301,14 @@ ps -ef | grep "voice-assistant --config" | grep -v grep | wc -l   # должно
 
 ### Логирование цепочки
 
-Логи пишутся в `/tmp/va_live.log`. Три ключевых события на цикл:
+На Linux логи идут в stdout/stderr (tracing). На Termux потоковый режим
+направляется в файл, напр. `~/stream.log`. Ключевые события на цикл:
 
 ```bash
+# Linux:
 tail -f /tmp/va_live.log | grep -aE "final transcript|llm generated|synthesizing"
+# Termux (потоковый):
+tail -f ~/stream.log | grep -aE "final transcript|llm generated|synthesized reply"
 ```
 
 - `final transcript` — что распознал STT (услышано);
