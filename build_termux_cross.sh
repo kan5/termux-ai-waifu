@@ -46,6 +46,30 @@ EOF
 "$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android${ANDROID_API_LEVEL}-clang" \
     -shared -o "$STUB_DIR/libpthread.so" "$STUB_DIR/pthread_stub.c"
 
+# --- aaudio stub ---
+# libaaudio.so is a system Android lib (present at runtime) but is NOT shipped
+# in the NDK aarch64 sysroot, so we can't link against it. Provide a stub .so
+# with the AAudio entry points we use; the real system lib is loaded at runtime.
+cat > "$STUB_DIR/aaudio_stub.c" <<'EOF'
+typedef void AAudioStream; typedef void AAudioStreamBuilder;
+int AAudio_createStreamBuilder(AAudioStreamBuilder **b){ return 0; }
+int AAudioStreamBuilder_setDirection(AAudioStreamBuilder *b, int d){ return 0; }
+int AAudioStreamBuilder_setSampleRate(AAudioStreamBuilder *b, int r){ return 0; }
+int AAudioStreamBuilder_setChannelCount(AAudioStreamBuilder *b, int c){ return 0; }
+int AAudioStreamBuilder_setFormat(AAudioStreamBuilder *b, int f){ return 0; }
+int AAudioStreamBuilder_setPerformanceMode(AAudioStreamBuilder *b, int m){ return 0; }
+int AAudioStreamBuilder_openStream(AAudioStreamBuilder *b, AAudioStream **s){ return 0; }
+int AAudioStreamBuilder_delete(AAudioStreamBuilder *b){ return 0; }
+int AAudioStream_requestStart(AAudioStream *s){ return 0; }
+int AAudioStream_requestStop(AAudioStream *s){ return 0; }
+int AAudioStream_read(AAudioStream *s, void *b, int n, long long t){ return 0; }
+int AAudioStream_write(AAudioStream *s, const void *b, int n, long long t){ return 0; }
+int AAudioStream_close(AAudioStream *s){ return 0; }
+int AAudioStream_getSampleRate(AAudioStream *s){ return 0; }
+EOF
+"$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android${ANDROID_API_LEVEL}-clang" \
+    -shared -o "$STUB_DIR/libaaudio.so" "$STUB_DIR/aaudio_stub.c"
+
 export RUSTFLAGS="-L $STUB_DIR ${RUSTFLAGS:-}"
 
 echo "==> Cross-compiling for aarch64-linux-android (API $ANDROID_API_LEVEL)..."

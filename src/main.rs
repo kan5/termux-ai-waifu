@@ -2,6 +2,8 @@
 
 #[cfg(not(target_os = "android"))]
 mod audio;
+#[cfg(target_os = "android")]
+mod aaudio;
 mod config;
 mod llm;
 mod offline;
@@ -9,6 +11,8 @@ mod offline;
 mod pipeline;
 mod resample;
 mod stt;
+#[cfg(target_os = "android")]
+mod stream;
 mod text;
 mod traits;
 mod tts;
@@ -23,25 +27,24 @@ use anyhow::{Context, Result};
 async fn main() -> Result<()> {
     init_tracing();
 
-    let (config_path, file_args) = parse_args();
+    let (config_path, mode) = parse_args();
     let config = config::Config::load(&config_path)
         .with_context(|| format!("failed to load config {}", config_path.display()))?;
 
     tracing::info!("configuration loaded: {:?}", config);
 
-    match file_args {
+    match mode {
+        // Streaming native AAudio loop (Termux/Android): mic → VAD → STT → LLM → TTS → speaker.
+        #[cfg(target_os = "android")]
+        Mode::Stream => stream::run_forever(config).await,
         // Offline (Termux) file pipeline: in.wav → VAD → STT → LLM → TTS → out.wav.
-        Some(file_args) => offline::run(config, file_args).await,
+        Mode::File(file_args) => offline::run(config, file_args).await,
         // Live CPAL pipeline (Linux/desktop only).
         #[cfg(not(target_os = "android"))]
-        None => pipeline::run(config).await,
-        // On Android there is no live pipeline (CPAL can't drive the audio
-        // devices), so the file mode is mandatory.
+        Mode::Live => pipeline::run(config).await,
+        // On Android there is no live CPAL pipeline, so the default is streaming.
         #[cfg(target_os = "android")]
-        None => {
-            eprintln!("on Termux/Android the file mode is required: --file-input <wav> --file-output <wav>");
-            std::process::exit(2);
-        }
+        Mode::Live => stream::run_forever(config).await,
     }
 }
 
@@ -52,11 +55,24 @@ fn init_tracing() {
     tracing_subscriber::fmt().with_env_filter(filter).init();
 }
 
-/// Parse `--config <path>`, `--file-input <wav>`, `--file-output <wav>`.
-fn parse_args() -> (PathBuf, Option<offline::FileArgs>) {
+/// Runtime mode selected on the CLI.
+enum Mode {
+    /// Offline file pipeline (`--file-input` / `--file-output`).
+    File(offline::FileArgs),
+    /// Live pipeline. On desktop this is CPAL; on Android it is AAudio streaming.
+    Live,
+    /// Streaming native AAudio loop (Termux/Android). `--stream`.
+    #[cfg(target_os = "android")]
+    Stream,
+}
+
+/// Parse `--config <path>`, `--file-input <wav>`, `--file-output <wav>`, `--stream`.
+fn parse_args() -> (PathBuf, Mode) {
     let mut config_path = PathBuf::from("config.toml");
     let mut file_input: Option<PathBuf> = None;
     let mut file_output: Option<PathBuf> = None;
+    #[cfg(target_os = "android")]
+    let mut stream = false;
 
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
@@ -76,13 +92,20 @@ fn parse_args() -> (PathBuf, Option<offline::FileArgs>) {
                     file_output = Some(PathBuf::from(p));
                 }
             }
+            #[cfg(target_os = "android")]
+            "--stream" => stream = true,
             _ => {}
         }
     }
 
-    let file_args = match (file_input, file_output) {
-        (Some(input), Some(output)) => Some(offline::FileArgs { input, output }),
-        // Only one of the two given — treat as an error at use site.
+    #[cfg(target_os = "android")]
+    if stream {
+        // --stream overrides file args if both given.
+        return (config_path, Mode::Stream);
+    }
+
+    match (file_input, file_output) {
+        (Some(input), Some(output)) => (config_path, Mode::File(offline::FileArgs { input, output })),
         (Some(_input), None) => {
             tracing::error!("--file-input given without --file-output; ignoring offline mode");
             eprintln!("--file-input requires --file-output");
@@ -93,8 +116,6 @@ fn parse_args() -> (PathBuf, Option<offline::FileArgs>) {
             eprintln!("--file-output requires --file-input");
             std::process::exit(2);
         }
-        (None, None) => None,
-    };
-
-    (config_path, file_args)
+        (None, None) => (config_path, Mode::Live),
+    }
 }
