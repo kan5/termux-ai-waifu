@@ -7,6 +7,7 @@ mod llm;
 mod offline;
 #[cfg(not(target_os = "android"))]
 mod pipeline;
+mod resample;
 mod stt;
 mod text;
 mod traits;

@@ -167,7 +167,7 @@ fn read_wav_mono_16k(path: &Path) -> Result<Vec<f32>> {
 
     // Resample to 16 kHz if needed.
     if spec.sample_rate != 16000 {
-        let mut resampler = crate::audio::LinearResampler::new(spec.sample_rate, 16000);
+        let mut resampler = crate::resample::LinearResampler::new(spec.sample_rate, 16000);
         mono = resampler.push(&mono);
     }
     Ok(mono)

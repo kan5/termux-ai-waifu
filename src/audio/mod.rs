@@ -4,8 +4,7 @@
 //! mono / 16 kHz / f32 representation (ТЗ §4). Sample-rate conversion is
 //! linear interpolation; channel downmix averages all channels.
 
-mod resample;
-pub use resample::LinearResampler;
+pub use crate::resample::LinearResampler;
 
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
