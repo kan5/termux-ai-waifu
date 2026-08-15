@@ -72,7 +72,11 @@ impl Llm for QwenLlm {
 
         let ctx_params = LlamaContextParams::default()
             .with_n_ctx(NonZeroU32::new(self.n_ctx))
-            .with_n_batch(N_BATCH);
+            .with_n_batch(N_BATCH)
+            // Use all available cores — llama.cpp's default can be low, which
+            // makes generation on a phone unnecessarily slow.
+            .with_n_threads(std::thread::available_parallelism().map(|n| n.get() as i32).unwrap_or(4))
+            .with_n_threads_batch(std::thread::available_parallelism().map(|n| n.get() as i32).unwrap_or(4));
         let mut ctx = self
             .model
             .new_context(&self.backend, ctx_params)
