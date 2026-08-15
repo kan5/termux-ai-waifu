@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Silero TTS service (v5_5_ru) behind Robyn.
+"""Silero TTS service (v5_5_ru) over stdlib ThreadingHTTPServer.
 
 Exposes a single endpoint:
 
@@ -12,21 +12,22 @@ Exposes a single endpoint:
 
 The Rust application POSTs text and plays back the returned PCM directly.
 
+The server uses the stdlib (ThreadingHTTPServer) so it runs anywhere with a
+system Python + torch/numpy — including Termux, where those come from `pkg`
+(python-torch / python-numpy) and there is no need for pip at all.
+
 Run:
-    python3 -m venv .venv && . .venv/bin/activate
-    pip install -r requirements.txt
     python service.py --host 127.0.0.1 --port 8090
 
 The first run downloads the Silero model from torch.hub (cached afterwards).
 """
 
 import argparse
+import json
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import numpy as np
 import torch
-from robyn import Robyn, Response
-
-app = Robyn(__file__)
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -65,27 +66,44 @@ def resample_linear(audio: np.ndarray, orig_rate: int, new_rate: int) -> np.ndar
 MODEL = load_model()
 
 
-@app.post("/tts")
-async def tts(request):
-    data = request.json()
-    text = data.get("text", "").strip()
-    speaker = data.get("speaker", "xenia")
-    if not text:
-        return Response(
-            status_code=400,
-            headers={"Content-Type": "text/plain"},
-            body=b"empty text",
-        )
+class TtsHandler(BaseHTTPRequestHandler):
+    protocol_version = "HTTP/1.1"
 
-    audio = MODEL.apply_tts(text=text, speaker=speaker, sample_rate=MODEL_RATE)
-    samples = audio.detach().cpu().numpy()
-    samples = resample_linear(samples, MODEL_RATE, TARGET_RATE)
-    pcm = samples.astype("<f4").tobytes()
-    return Response(
-        status_code=200,
-        headers={"Content-Type": "application/octet-stream"},
-        body=pcm,
-    )
+    def log_message(self, format, *args):
+        print("[%s] %s" % (self.log_date_time_string(), format % args), flush=True)
+
+    def do_POST(self):
+        if self.path != "/tts":
+            self.send_error(404, "not found")
+            return
+
+        # Read the JSON body.
+        length = int(self.headers.get("Content-Length", 0) or 0)
+        raw = self.rfile.read(length) if length else b""
+        try:
+            data = json.loads(raw.decode("utf-8"))
+            text = (data.get("text") or "").strip()
+            speaker = data.get("speaker") or "xenia"
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            self._respond(400, b"bad json", "text/plain")
+            return
+
+        if not text:
+            self._respond(400, b"empty text", "text/plain")
+            return
+
+        audio = MODEL.apply_tts(text=text, speaker=speaker, sample_rate=MODEL_RATE)
+        samples = audio.detach().cpu().numpy()
+        samples = resample_linear(samples, MODEL_RATE, TARGET_RATE)
+        pcm = samples.astype("<f4").tobytes()
+        self._respond(200, pcm, "application/octet-stream")
+
+    def _respond(self, code, body, content_type):
+        self.send_response(code)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
 
 
 def main():
@@ -93,7 +111,15 @@ def main():
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8090)
     args = parser.parse_args()
-    app.start(host=args.host, port=args.port)
+
+    server = ThreadingHTTPServer((args.host, args.port), TtsHandler)
+    print(f"TTS service listening on http://{args.host}:{args.port}", flush=True)
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        server.server_close()
 
 
 if __name__ == "__main__":

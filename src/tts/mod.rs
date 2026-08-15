@@ -1,4 +1,4 @@
-//! Text-to-speech via a separate Python (Robyn + Silero) HTTP service.
+//! Text-to-speech via a separate Python (Silero TTS) HTTP service.
 //!
 //! The Rust side POSTs `{"text", "speaker"}` to the service and receives raw
 //! little-endian f32 PCM (mono, 16 kHz) as the response body, which is wrapped

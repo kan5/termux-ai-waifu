@@ -129,7 +129,7 @@ impl Default for LlmConfig {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct TtsConfig {
-    /// Base URL of the Python Robyn TTS service.
+    /// Base URL of the Python TTS service.
     pub url: String,
     /// Silero speaker voice id.
     pub speaker: String,

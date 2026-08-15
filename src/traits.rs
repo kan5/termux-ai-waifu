@@ -56,7 +56,7 @@ pub trait Llm: Send {
 
 /// Text-to-speech. Returns mono 16 kHz f32 audio for the given text.
 ///
-/// Backed by a separate Python (Robyn + Silero) HTTP service.
+/// Backed by a separate Python (Silero TTS) HTTP service.
 pub trait TextToSpeech: Send + Sync {
     async fn synthesize(&self, text: &str) -> Result<AudioChunk>;
 }

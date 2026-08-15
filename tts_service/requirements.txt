@@ -1,4 +1,10 @@
-robyn>=0.70
+# TTS-сервис теперь использует stdlib http.server (ThreadingHTTPServer),
+# поэтому web-фреймворк (robyn) больше не нужен.
+#
+# На Linux зависимости ставятся через pip:
+#   pip install -r requirements.txt
+# В Termux torch и numpy ставятся через pkg (python-torch / python-numpy),
+# а остальное — чистый Python, не требующее pip-бинарников.
 torch>=2.1
 numpy>=1.24
 omegaconf>=2.3

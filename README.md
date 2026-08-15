@@ -14,7 +14,7 @@
 | VAD | Silero VAD (ONNX Runtime, `ort`) | `silero_vad.onnx` |
 | STT | transcribe.cpp (Rust bindings) | GigaAM v3 e2e-CTC Q8_0 |
 | LLM | llama.cpp (`llama-cpp-2`) | Qwen3-0.6B-abliterated q4_k_m |
-| TTS | Python-сервис (Robyn + Silero) | `v5_5_ru` |
+| TTS | Python-сервис (stdlib HTTP + Silero) | `v5_5_ru` |
 
 Внутренний формат аудио — mono / 16 kHz / f32.
 
@@ -133,12 +133,19 @@ termux-media-player play output.wav
 
 ## TTS-сервис (Python)
 
+Сервис использует только stdlib (`http.server.ThreadingHTTPServer`), поэтому
+web-фреймворк не нужен. На Linux зависимости (torch, numpy) ставятся через
+pip:
+
 ```bash
 cd tts_service
 python3 -m venv .venv && . .venv/bin/activate
 pip install -r requirements.txt
 python service.py --host 127.0.0.1 --port 8090
 ```
+
+В Termux torch и numpy ставятся через `pkg install python-torch python-numpy`,
+и сервис запускается системным python без venv (см. раздел Termux выше).
 
 Первый запуск скачивает Silero TTS `v5_5_ru` с torch.hub.
 
