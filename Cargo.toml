@@ -30,36 +30,30 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 anyhow = "1"
 thiserror = "2"
 
-# --- Native ML backends (enabled one at a time, see phases) ---
-# STT — pinned commit; default-features off to skip the macOS-only `metal` backend.
-transcribe-cpp = { git = "https://github.com/handy-computer/transcribe.cpp.git", rev = "856d7c10a1a864b900e066b7c9801edf373f5148", package = "transcribe-cpp", default-features = false }
-# VAD tensor handling (used by src/vad).
-ndarray = "0.16"
-# UTF-8 incremental decoder used by both LLM backends (qwen.rs / native.rs).
-encoding_rs = "0.8"
-
-# Dynamic loading of the system libllama.so on Android/Termux (native LLM
-# backend). On desktop llama-cpp-2 is used instead, but this crate is harmless.
-libloading = "0.8"
-
-# --- Desktop-only native backends ---
-# llama-cpp-2 / llama-cpp-sys-2 are NOT available on Android/Termux: the -sys
-# crate's build.rs requires the Android NDK on aarch64-linux-android (any
-# version), which Termux does not ship. On Android we use the system libllama.so
-# via `native.rs` instead, so these crates are excluded from that target.
-[target.'cfg(not(target_os = "android"))'.dependencies]
-# LLM — pin exact versions together with Cargo.lock.
+# --- Native ML backends ---
+# LLM — pin exact versions together with Cargo.lock. On Android/Termux the
+# binary is cross-compiled on the host with the Android NDK, so the -sys crate's
+# NDK requirement is satisfied (it would fail only if built inside Termux,
+# which has no NDK).
 llama-cpp-2 = "=0.1.153"
 # The -sys crate must match exactly: 0.1.154 changed the FFI struct layout and
 # breaks the 0.1.153 wrapper (use_mmap/use_mlock fields removed upstream).
 llama-cpp-sys-2 = "=0.1.153"
-# ort — see comment above: desktop keeps download-binaries (prebuilt ORT).
-ort = { version = "=2.0.0-rc.10", features = ["ndarray"] }
+# UTF-8 incremental decoder used by the LLM backend.
+encoding_rs = "0.8"
+# STT — pinned commit; default-features off to skip the macOS-only `metal` backend.
+transcribe-cpp = { git = "https://github.com/handy-computer/transcribe.cpp.git", rev = "856d7c10a1a864b900e066b7c9801edf373f5148", package = "transcribe-cpp", default-features = false }
+# VAD tensor handling (used by src/vad).
+ndarray = "0.16"
 
-# --- Android/Termux-only native backends ---
-[target.'cfg(target_os = "android")'.dependencies]
-# ort: load-dynamic loads the system libonnxruntime.so (onnxruntime pkg) via dlopen.
-ort = { version = "=2.0.0-rc.10", default-features = false, features = ["ndarray", "load-dynamic"] }
+# VAD — ort version taken from the current Silero VAD Rust example Cargo.toml.
+# On desktop we keep the default `download-binaries` feature (ort fetches a
+# prebuilt ONNX Runtime). For Android cross-compilation with NDK the binary
+# needs the aarch64 `libonnxruntime.so`; the ort crate's download-binaries
+# feature does not fetch an android build, so cross-builds should set
+# `ORT_LIB_LOCATION` (see README). We keep the default feature set here so
+# desktop builds are unchanged; android cross-builds override via env.
+ort = { version = "=2.0.0-rc.10", features = ["ndarray"] }
 
 [profile.release]
 opt-level = 3
