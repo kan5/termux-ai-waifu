@@ -13,7 +13,7 @@ use std::time::Duration;
 
 use crate::config::Config;
 use crate::text::filter_think;
-use crate::traits::{Llm, SpeechToText, Vad, VadState};
+use crate::traits::{Llm, SpeechToText, TextToSpeech, Vad, VadState};
 use crate::types::AudioChunk;
 
 /// Run the streaming listen → reply loop forever (until Ctrl-C / signal).
@@ -43,7 +43,7 @@ async fn run_one_utterance(config: &Config, chunk_samples: usize) -> Result<Opti
     let mut vad = crate::vad::SileroVad::new(&config.vad)?;
     let mut stt = crate::stt::GigaamStt::new(&config.stt)?;
 
-    let mut input = crate::aaudio::open_input(16000).context("open AAudio input")?;
+    let input = crate::aaudio::open_input(16000).context("open AAudio input")?;
     crate::aaudio::start(input)?;
 
     let mut speech: Vec<f32> = Vec::new();

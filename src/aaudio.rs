@@ -25,7 +25,7 @@ type Stream = *mut c_void;
 type Builder = *mut c_void;
 
 #[link(name = "aaudio")]
-extern "C" {
+unsafe extern "C" {
     fn AAudio_createStreamBuilder(builder: *mut Builder) -> c_int;
     fn AAudioStreamBuilder_setDirection(builder: Builder, direction: c_int) -> c_int;
     fn AAudioStreamBuilder_setSampleRate(builder: Builder, rate: c_int) -> c_int;
