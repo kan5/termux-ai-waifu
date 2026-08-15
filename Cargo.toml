@@ -1,0 +1,45 @@
+[package]
+name = "voice-assistant"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+
+# Async runtime
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "signal"] }
+
+# Audio I/O
+cpal = "0.18.1"
+
+# Config / serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "1"
+
+# HTTP client for Python TTS service
+reqwest = { version = "0.13", default-features = false, features = ["json"] }
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+
+# Errors
+anyhow = "1"
+thiserror = "2"
+
+# --- Native ML backends (enabled one at a time, see phases) ---
+# LLM — pin exact versions together with Cargo.lock.
+llama-cpp-2 = "=0.1.153"
+# The -sys crate must match exactly: 0.1.154 changed the FFI struct layout and
+# breaks the 0.1.153 wrapper (use_mmap/use_mlock fields removed upstream).
+llama-cpp-sys-2 = "=0.1.153"
+encoding_rs = "0.8"
+# STT — pinned commit; default-features off to skip the macOS-only `metal` backend.
+transcribe-cpp = { git = "https://github.com/handy-computer/transcribe.cpp.git", rev = "856d7c10a1a864b900e066b7c9801edf373f5148", package = "transcribe-cpp", default-features = false }
+# VAD — ort version taken from the current Silero VAD Rust example Cargo.toml.
+ort = { version = "=2.0.0-rc.10", features = ["ndarray"] }
+ndarray = "0.16"
+
+[profile.release]
+opt-level = 3
+lto = "thin"

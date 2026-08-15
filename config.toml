@@ -1,0 +1,41 @@
+# Voice assistant configuration.
+# All paths are relative to the current working directory.
+
+[audio]
+# input_device = "default"
+# output_device = "default"
+sample_rate = 16000
+channels = 1
+chunk_samples = 480          # 30 ms at 16 kHz
+# Optional: override the device's reported sample rate (None = auto-detect).
+# Only needed if a device genuinely misreports its rate.
+# output_sample_rate = 48000
+# USB webcam mic runs natively at 32000 Hz but CPAL reports 48000 Hz,
+# so we force the real rate to avoid pitch-shifted/garbled STT input.
+input_sample_rate = 32000
+
+[vad]
+model_path = "models/silero_vad.onnx"
+threshold = 0.5
+min_speech_ms = 250
+min_silence_ms = 500
+speech_pad_ms = 300
+
+[stt]
+model_path = "models/gigaam-v3-e2e-ctc-Q8_0.gguf"
+language = "ru"
+partial_interval_ms = 500
+
+[llm]
+model_path = "models/Qwen3-0.6B-abliterated-q4_k_m.gguf"
+n_ctx = 2048
+max_tokens = 512
+temperature = 0.7
+system_prompt = "Ты — голосовой ассистент. Отвечай кратко, на русском, без разметки."
+chunk_char_target = 160
+
+[tts]
+url = "http://127.0.0.1:8090"
+speaker = "xenia"
+sample_rate = 16000
+timeout_secs = 120

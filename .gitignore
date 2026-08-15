@@ -1,0 +1,4 @@
+/target
+/models
+/tts_service/.venv
+__pycache__/
