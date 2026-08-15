@@ -19,8 +19,8 @@ RAW="$WORKDIR/input.opus"
 IN="$WORKDIR/input.wav"
 OUT="$WORKDIR/output.wav"
 # Auto-stop recording after this many seconds (0 = unlimited, stop with Ctrl-C).
-# A fixed limit makes the loop hands-free: speak, wait, hear the reply.
-RECORD_LIMIT="${RECORD_LIMIT:-8}"
+# 4s keeps the loop snappy — speak a short phrase, get a quick reply.
+RECORD_LIMIT="${RECORD_LIMIT:-4}"
 
 record() {
     echo "▶ Говорите $RECORD_LIMIT с..."
