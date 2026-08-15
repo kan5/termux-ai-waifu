@@ -47,13 +47,17 @@ transcribe-cpp = { git = "https://github.com/handy-computer/transcribe.cpp.git",
 ndarray = "0.16"
 
 # VAD — ort version taken from the current Silero VAD Rust example Cargo.toml.
-# On desktop we keep the default `download-binaries` feature (ort fetches a
-# prebuilt ONNX Runtime). For Android cross-compilation with NDK the binary
-# needs the aarch64 `libonnxruntime.so`; the ort crate's download-binaries
-# feature does not fetch an android build, so cross-builds should set
-# `ORT_LIB_LOCATION` (see README). We keep the default feature set here so
-# desktop builds are unchanged; android cross-builds override via env.
+# Desktop keeps `download-binaries` (ort fetches a prebuilt ONNX Runtime).
+[target.'cfg(not(target_os = "android"))'.dependencies]
 ort = { version = "=2.0.0-rc.10", features = ["ndarray"] }
+
+# On Android (cross-compiled with NDK) ort's `download-binaries` feature does
+# not even COMPILE (its build.rs imports dirs::cache_dir, defined only for
+# linux/macos/windows) and has no aarch64-android prebuilt anyway. So we use
+# `load-dynamic` and dlopen a system libonnxruntime.so (the Termux `onnxruntime`
+# pkg, or a copy next to the binary); see README.
+[target.'cfg(target_os = "android")'.dependencies]
+ort = { version = "=2.0.0-rc.10", default-features = false, features = ["ndarray", "load-dynamic"] }
 
 [profile.release]
 opt-level = 3
