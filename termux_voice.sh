@@ -63,7 +63,12 @@ one() {
 loop() {
     while true; do
         record
-        run_offline
+        # run_offline returns non-zero on "no speech detected" / empty result —
+        # that must NOT kill the loop (set -e would exit). Swallow it and retry.
+        if ! run_offline; then
+            echo "⚠ Нет распознанной речи — повторяю..."
+        fi
+        sleep 1
     done
 }
 
