@@ -16,7 +16,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 
 use crate::config::Config;
-use crate::pipeline::filter_think;
+use crate::text::filter_think;
 use crate::traits::{Llm, SpeechToText, TextToSpeech, Vad, VadState};
 use crate::types::AudioChunk;
 

@@ -8,9 +8,6 @@ edition = "2024"
 # Async runtime
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "signal"] }
 
-# Audio I/O
-cpal = "0.18.1"
-
 # Config / serialization
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -30,11 +27,9 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 anyhow = "1"
 thiserror = "2"
 
-# --- Native ML backends ---
-# LLM — pin exact versions together with Cargo.lock. On Android/Termux the
-# binary is cross-compiled on the host with the Android NDK, so the -sys crate's
-# NDK requirement is satisfied (it would fail only if built inside Termux,
-# which has no NDK).
+# --- Native ML backends (used on all targets; on Android they cross-compile
+# via the host NDK, satisfying the -sys crates' NDK requirement) ---
+# LLM — pin exact versions together with Cargo.lock.
 llama-cpp-2 = "=0.1.153"
 # The -sys crate must match exactly: 0.1.154 changed the FFI struct layout and
 # breaks the 0.1.153 wrapper (use_mmap/use_mlock fields removed upstream).
@@ -46,14 +41,19 @@ transcribe-cpp = { git = "https://github.com/handy-computer/transcribe.cpp.git",
 # VAD tensor handling (used by src/vad).
 ndarray = "0.16"
 
-# VAD — ort version taken from the current Silero VAD Rust example Cargo.toml.
-# Desktop keeps `download-binaries` (ort fetches a prebuilt ONNX Runtime).
+# --- Desktop-only dependencies ---
+# On Android/Termux the live CPAL pipeline and its audio module are compiled
+# out: CPAL can't drive the mic/speakers (no ALSA) and its AAudio backend pulls
+# in -laudio/-lpthread that fail to link. Android uses the file-based offline
+# pipeline + Termux:API instead. ort keeps `download-binaries` (prebuilt ORT).
 [target.'cfg(not(target_os = "android"))'.dependencies]
+cpal = "0.18.1"
 ort = { version = "=2.0.0-rc.10", features = ["ndarray"] }
 
-# On Android (cross-compiled with NDK) ort's `download-binaries` feature does
-# not even COMPILE (its build.rs imports dirs::cache_dir, defined only for
-# linux/macos/windows) and has no aarch64-android prebuilt anyway. So we use
+# --- Android/Termux-only dependencies ---
+# ort's `download-binaries` feature does not even COMPILE on the android target
+# (its build.rs imports dirs::cache_dir, defined only for linux/macos/windows)
+# and has no aarch64-android prebuilt anyway. So on Android we use
 # `load-dynamic` and dlopen a system libonnxruntime.so (the Termux `onnxruntime`
 # pkg, or a copy next to the binary); see README.
 [target.'cfg(target_os = "android")'.dependencies]

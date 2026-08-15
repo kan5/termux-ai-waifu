@@ -289,34 +289,8 @@ fn ends_sentence(s: &str) -> bool {
 /// Strip Qwen3's `<think>…</think>` reasoning blocks from a text fragment.
 /// `in_think` persists across calls so blocks spanning chunk boundaries are
 /// handled correctly.
-pub(crate) fn filter_think(chunk: &str, in_think: &mut bool) -> String {
-    const OPEN: &str = "<think>";
-    const CLOSE: &str = "</think>";
-
-    let mut out = String::new();
-    let mut rest = chunk;
-    loop {
-        if *in_think {
-            match rest.find(CLOSE) {
-                Some(idx) => {
-                    *in_think = false;
-                    rest = &rest[idx + CLOSE.len()..];
-                }
-                None => break, // still inside a think block — drop the rest
-            }
-        } else {
-            match rest.find(OPEN) {
-                Some(idx) => {
-                    out.push_str(&rest[..idx]);
-                    *in_think = true;
-                    rest = &rest[idx + OPEN.len()..];
-                }
-                None => {
-                    out.push_str(rest);
-                    break;
-                }
-            }
-        }
-    }
-    out
-}
+///
+/// NOTE: the implementation now lives in [`crate::text::filter_think`] so it can
+/// be shared with the offline (file-based) pipeline that runs on Android, where
+/// this whole audio/pipeline module is compiled out.
+pub(crate) use crate::text::filter_think;

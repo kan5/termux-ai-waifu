@@ -1,9 +1,11 @@
 //! Voice assistant — local voice pipeline (Microphone → VAD → STT → LLM → TTS → audio).
 
+#[cfg(not(target_os = "android"))]
 mod audio;
 mod config;
 mod llm;
 mod offline;
+#[cfg(not(target_os = "android"))]
 mod pipeline;
 mod stt;
 mod text;
@@ -29,8 +31,16 @@ async fn main() -> Result<()> {
     match file_args {
         // Offline (Termux) file pipeline: in.wav → VAD → STT → LLM → TTS → out.wav.
         Some(file_args) => offline::run(config, file_args).await,
-        // Live CPAL pipeline (Linux).
+        // Live CPAL pipeline (Linux/desktop only).
+        #[cfg(not(target_os = "android"))]
         None => pipeline::run(config).await,
+        // On Android there is no live pipeline (CPAL can't drive the audio
+        // devices), so the file mode is mandatory.
+        #[cfg(target_os = "android")]
+        None => {
+            eprintln!("on Termux/Android the file mode is required: --file-input <wav> --file-output <wav>");
+            std::process::exit(2);
+        }
     }
 }
 
