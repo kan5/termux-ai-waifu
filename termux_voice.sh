@@ -24,6 +24,11 @@ RECORD_LIMIT="${RECORD_LIMIT:-8}"
 
 record() {
     echo "▶ Говорите $RECORD_LIMIT с..."
+    # termux-microphone-record refuses to start if the file already exists, and
+    # the loop reuses the same names — remove stale files first. Also stop any
+    # previous recording (in case the loop was interrupted mid-record).
+    termux-microphone-record -q 2>/dev/null || true
+    rm -f "$RAW" "$IN" "$OUT"
     # termux-microphone-record writes compressed m4a (no WAV/PCM support); we
     # decode to mono 16k WAV afterwards. -l auto-stops after RECORD_LIMIT sec.
     termux-microphone-record -f "$RAW" -e aac -r 16000 -c 1 -l "$RECORD_LIMIT"
