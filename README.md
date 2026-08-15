@@ -133,20 +133,32 @@ termux-media-player play output.wav
 
 ### LLM (llama.cpp) на Termux
 
-LLM-бэкенд через крейт `llama-cpp-2` в Termux **не собирается**: его build.rs
-на `aarch64-linux-android` требует Android NDK (которого в Termux нет), в любой
-версии (в т.ч. 0.1.154). Вместо этого используется **системный нативный
-`libllama.so`** из пакета `llama-cpp` (предсобран под Termux, без NDK):
+LLM-бэкенд через крейт `llama-cpp-2` **нельзя собрать внутри Termux**: его
+build.rs на `aarch64-linux-android` требует Android NDK (которого в Termux
+нет), в любой версии (в т.ч. 0.1.154). Поэтому под Android бинарь собирается
+**кросс-компиляцией на десктопе** с Android NDK, а готовый ELF кладётся в
+Termux. Требование NDK при этом удовлетворяется (NDK есть на хосте).
 
 ```bash
-pkg install llama-cpp
-# затем Rust-бинарь линкуется с $PREFIX/lib/libllama.so
+# на десктопе (Linux):
+rustup target add aarch64-linux-android
+cargo install cargo-ndk
+# скачать Android NDK (напр. r27c) в ~/Android/Sdk/ и:
+export ANDROID_NDK_ROOT=~/Android/Sdk/android-ndk-r27c
+# -P 24 (Android 7.0): bionic exposes POSIX_MADV_* only when __ANDROID_API__ >= 23
+cargo ndk -t arm64-v8a -P 24 -o android-build build --release
+# результат: android-build/arm64-v8a/release/voice-assistant
 ```
 
-Работоспособность подтверждена: `llama_ctest.py` (ctypes) грузит Qwen,
-декодирует и генерирует текст через системную библиотеку (llama.cpp 0.18.1,
-новое разделение model/vocab). Соответствующая Rust FFI-обёртка — в работе;
-VAD/STT/TTS при этом уже работают на устройстве.
+Замечания:
+- `ort` на android использует `load-dynamic` (см. Cargo.toml): бинарь в
+  рантайме dlopen'ит `libonnxruntime.so`. На устройстве он есть в
+  `$PREFIX/lib` (пакет `onnxruntime`) либо его можно положить рядом с бинарём.
+- `llama-cpp-sys-2` и `transcribe-cpp` собираются нативно через NDK-toolchain.
+- Готовый бинарь положите в `$HOME` в Termux и запускайте как обычно.
+
+Работоспособность системной библиотеки на устройстве дополнительно проверена
+`llama_ctest.py` (ctypes против `$PREFIX/lib/libllama.so`).
 
 ## TTS-сервис (Python)
 
