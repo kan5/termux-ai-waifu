@@ -39,15 +39,17 @@ record() {
 }
 
 run_offline() {
-    echo "▷ Декодирование в mono 16k WAV..."
-    ffmpeg -y -v error -i "$RAW" -ar 16000 -ac 1 "$IN"
+    echo "▷ Декодирование в mono 16k WAV (с усилением)..."
+    # -af volume=10dB: phone mics are quiet; boost so Silero VAD (threshold 0.5)
+    # reliably detects speech.
+    ffmpeg -y -v error -i "$RAW" -ar 16000 -ac 1 -af "volume=10dB" "$IN"
 
     echo "▷ Распознавание + ответ (VAD→STT→LLM→TTS)..."
     # TTS-сервис должен быть запущен (./setup_termux.sh tts; python tts_service/service.py ...)
     # LD_LIBRARY_PATH на локальный каталог: бинарь использует NDK libc++_shared.so
     # и libonnxruntime.so, положенные рядом (см. build_termux_cross.sh).
     LD_LIBRARY_PATH="$(pwd)" ./voice-assistant-android \
-        --config config.toml \
+        --config config.termux.toml \
         --file-input "$IN" \
         --file-output "$OUT"
 
