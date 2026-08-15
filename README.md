@@ -156,6 +156,16 @@ cargo ndk -t arm64-v8a -P 24 -o android-build build --release
   `$PREFIX/lib` (пакет `onnxruntime`) либо его можно положить рядом с бинарём.
 - `llama-cpp-sys-2` и `transcribe-cpp` собираются нативно через NDK-toolchain.
 - Готовый бинарь положите в `$HOME` в Termux и запускайте как обычно.
+- Бинарь линкуется с `libc++_shared.so`; Termux ставит более старый libc++, чей
+  ABI не содержит некоторых символов NDK-r27. Поэтому `build_termux_cross.sh`
+  кладёт NDK-версию `libc++_shared.so` рядом с бинарём, и запускать нужно с
+  `LD_LIBRARY_PATH=<каталог с бинарём>`. То же касается `libonnxruntime.so` —
+  его удобно положить рядом (бинар ищет его относительно себя).
+- API level: `-P 24`/`ANDROID_API_LEVEL=24` обязательны — bionic открывает
+  `POSIX_MADV_*` только при `__ANDROID_API__ >= 23` (llama.cpp его использует).
+
+Работоспособность полного пайплайна на устройстве проверена: VAD→STT→LLM→TTS
+отрабатывают и записывают ответ в WAV (см. `termux_voice.sh`).
 
 Работоспособность системной библиотеки на устройстве дополнительно проверена
 `llama_ctest.py` (ctypes против `$PREFIX/lib/libllama.so`).

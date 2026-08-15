@@ -31,7 +31,9 @@ run_offline() {
 
     echo "▷ Распознавание + ответ (VAD→STT→LLM→TTS)..."
     # TTS-сервис должен быть запущен (./setup_termux.sh tts; python tts_service/service.py ...)
-    ./target/release/voice-assistant \
+    # LD_LIBRARY_PATH на локальный каталог: бинарь использует NDK libc++_shared.so
+    # и libonnxruntime.so, положенные рядом (см. build_termux_cross.sh).
+    LD_LIBRARY_PATH="$(pwd)" ./voice-assistant-android \
         --config config.toml \
         --file-input "$IN" \
         --file-output "$OUT"

@@ -57,5 +57,15 @@ if [[ ! -x "$BIN" ]]; then
     echo "ERROR: expected binary not found: $BIN" >&2
     exit 1
 fi
+
+# The binary links against libc++_shared.so; Termux ships an older libc++ whose
+# ABI lacks some symbols the NDK-r27 build references. Copy the NDK's own
+# libc++_shared.so next to the binary and run with LD_LIBRARY_PATH pointing at
+# it (see README / termux_voice.sh).
+LIBDIR="$(dirname "$BIN")"
+cp "$NDK/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android/libc++_shared.so" \
+    "$LIBDIR/libc++_shared.so"
+
 echo "==> OK: $BIN ($(du -h "$BIN" | cut -f1))"
-echo "    Copy it to Termux and run with --file-input / --file-output."
+echo "    + libc++_shared.so copied alongside (needed on Termux)"
+echo "    Copy both to Termux and run with --file-input / --file-output."
