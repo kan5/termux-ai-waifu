@@ -11,18 +11,16 @@
 use std::ffi::{c_char, c_float, c_int, c_void, CString};
 
 use anyhow::{Context, Result};
-use libloading::{Library, Symbol};
+use libloading::Library;
 
 use crate::config::LlmConfig;
 use crate::traits::Llm;
 
 type LlamaToken = i32;
 
-// ---------- opaque handles ----------
-// Each is just a pointer we pass back into the C library.
-
 // ---------- llama_model_params (16 fields) ----------
 #[repr(C)]
+#[derive(Clone, Copy)]
 struct LlamaModelParams {
     devices: *mut c_void,
     tensor_buft_overrides: *const c_void,
@@ -44,6 +42,7 @@ struct LlamaModelParams {
 
 // ---------- llama_context_params (30 fields) ----------
 #[repr(C)]
+#[derive(Clone, Copy)]
 struct LlamaContextParams {
     n_ctx: u32,
     n_batch: u32,
@@ -94,6 +93,7 @@ struct LlamaSamplerChainParams {
 
 // ---------- llama_batch (7 fields) ----------
 #[repr(C)]
+#[derive(Clone, Copy)]
 struct LlamaBatch {
     n_tokens: c_int,
     token: *mut LlamaToken,
@@ -114,6 +114,7 @@ struct LlamaTokenData {
 }
 
 #[repr(C)]
+#[derive(Clone, Copy)]
 struct LlamaTokenDataArray {
     data: *mut LlamaTokenData,
     size: usize,
@@ -121,60 +122,63 @@ struct LlamaTokenDataArray {
     sorted: bool,
 }
 
-// ---------- dynamic symbols ----------
-struct LlamaApi<'a> {
-    backend_init: Symbol<'a, unsafe extern "C" fn(c_int)>,
-    model_default_params: Symbol<'a, unsafe extern "C" fn() -> LlamaModelParams>,
-    model_load_from_file: Symbol<'a, unsafe extern "C" fn(*const c_char, LlamaModelParams) -> *mut c_void>,
-    model_get_vocab: Symbol<'a, unsafe extern "C" fn(*mut c_void) -> *mut c_void>,
-    context_default_params: Symbol<'a, unsafe extern "C" fn() -> LlamaContextParams>,
-    init_from_model: Symbol<'a, unsafe extern "C" fn(*mut c_void, LlamaContextParams) -> *mut c_void>,
-    free: Symbol<'a, unsafe extern "C" fn(*mut c_void)>,
-    vocab_n_tokens: Symbol<'a, unsafe extern "C" fn(*mut c_void) -> i32>,
-    tokenize: Symbol<'a, unsafe extern "C" fn(*mut c_void, *const c_char, i32, *mut LlamaToken, i32, bool, bool) -> i32>,
-    token_to_piece: Symbol<'a, unsafe extern "C" fn(*mut c_void, LlamaToken, *mut c_char, i32, i32, bool) -> i32>,
-    vocab_is_eog: Symbol<'a, unsafe extern "C" fn(*mut c_void, LlamaToken) -> bool>,
-    sampler_chain_default_params: Symbol<'a, unsafe extern "C" fn() -> LlamaSamplerChainParams>,
-    sampler_chain_init: Symbol<'a, unsafe extern "C" fn(LlamaSamplerChainParams) -> *mut c_void>,
-    sampler_chain_add: Symbol<'a, unsafe extern "C" fn(*mut c_void, *mut c_void)>,
-    sampler_init_temp: Symbol<'a, unsafe extern "C" fn(c_float) -> *mut c_void>,
-    sampler_init_top_p: Symbol<'a, unsafe extern "C" fn(c_float, usize) -> *mut c_void>,
-    sampler_init_dist: Symbol<'a, unsafe extern "C" fn(u32) -> *mut c_void>,
-    batch_get_one: Symbol<'a, unsafe extern "C" fn(*mut LlamaToken, i32) -> LlamaBatch>,
-    decode: Symbol<'a, unsafe extern "C" fn(*mut c_void, LlamaBatch) -> i32>,
-    get_logits_ith: Symbol<'a, unsafe extern "C" fn(*mut c_void, i32) -> *mut c_float>,
-    sampler_apply: Symbol<'a, unsafe extern "C" fn(*mut c_void, *mut LlamaTokenDataArray)>,
-    sampler_accept: Symbol<'a, unsafe extern "C" fn(*mut c_void, LlamaToken)>,
+// ---------- function pointers (copy of `Symbol`s, keep Library alive) ----------
+struct LlamaApi {
+    backend_init: unsafe extern "C" fn(c_int),
+    model_default_params: unsafe extern "C" fn() -> LlamaModelParams,
+    model_load_from_file: unsafe extern "C" fn(*const c_char, LlamaModelParams) -> *mut c_void,
+    model_get_vocab: unsafe extern "C" fn(*mut c_void) -> *mut c_void,
+    context_default_params: unsafe extern "C" fn() -> LlamaContextParams,
+    init_from_model: unsafe extern "C" fn(*mut c_void, LlamaContextParams) -> *mut c_void,
+    free: unsafe extern "C" fn(*mut c_void),
+    vocab_n_tokens: unsafe extern "C" fn(*mut c_void) -> i32,
+    tokenize: unsafe extern "C" fn(*mut c_void, *const c_char, i32, *mut LlamaToken, i32, bool, bool) -> i32,
+    token_to_piece: unsafe extern "C" fn(*mut c_void, LlamaToken, *mut c_char, i32, i32, bool) -> i32,
+    vocab_is_eog: unsafe extern "C" fn(*mut c_void, LlamaToken) -> bool,
+    sampler_chain_default_params: unsafe extern "C" fn() -> LlamaSamplerChainParams,
+    sampler_chain_init: unsafe extern "C" fn(LlamaSamplerChainParams) -> *mut c_void,
+    sampler_chain_add: unsafe extern "C" fn(*mut c_void, *mut c_void),
+    sampler_init_temp: unsafe extern "C" fn(c_float) -> *mut c_void,
+    sampler_init_top_p: unsafe extern "C" fn(c_float, usize) -> *mut c_void,
+    sampler_init_dist: unsafe extern "C" fn(u32) -> *mut c_void,
+    batch_get_one: unsafe extern "C" fn(*mut LlamaToken, i32) -> LlamaBatch,
+    decode: unsafe extern "C" fn(*mut c_void, LlamaBatch) -> i32,
+    get_logits_ith: unsafe extern "C" fn(*mut c_void, i32) -> *mut c_float,
+    sampler_apply: unsafe extern "C" fn(*mut c_void, *mut LlamaTokenDataArray),
+    sampler_accept: unsafe extern "C" fn(*mut c_void, LlamaToken),
 }
 
-impl<'a> LlamaApi<'a> {
-    fn load(lib: &'a Library) -> Result<Self> {
-        unsafe {
-            Ok(Self {
-                backend_init: lib.get(b"llama_backend_init")?,
-                model_default_params: lib.get(b"llama_model_default_params")?,
-                model_load_from_file: lib.get(b"llama_model_load_from_file")?,
-                model_get_vocab: lib.get(b"llama_model_get_vocab")?,
-                context_default_params: lib.get(b"llama_context_default_params")?,
-                init_from_model: lib.get(b"llama_init_from_model")?,
-                free: lib.get(b"llama_free")?,
-                vocab_n_tokens: lib.get(b"llama_vocab_n_tokens")?,
-                tokenize: lib.get(b"llama_tokenize")?,
-                token_to_piece: lib.get(b"llama_token_to_piece")?,
-                vocab_is_eog: lib.get(b"llama_vocab_is_eog")?,
-                sampler_chain_default_params: lib.get(b"llama_sampler_chain_default_params")?,
-                sampler_chain_init: lib.get(b"llama_sampler_chain_init")?,
-                sampler_chain_add: lib.get(b"llama_sampler_chain_add")?,
-                sampler_init_temp: lib.get(b"llama_sampler_init_temp")?,
-                sampler_init_top_p: lib.get(b"llama_sampler_init_top_p")?,
-                sampler_init_dist: lib.get(b"llama_sampler_init_dist")?,
-                batch_get_one: lib.get(b"llama_batch_get_one")?,
-                decode: lib.get(b"llama_decode")?,
-                get_logits_ith: lib.get(b"llama_get_logits_ith")?,
-                sampler_apply: lib.get(b"llama_sampler_apply")?,
-                sampler_accept: lib.get(b"llama_sampler_accept")?,
-            })
+impl LlamaApi {
+    unsafe fn load(lib: &Library) -> Result<Self> {
+        macro_rules! sym {
+            ($name:literal, $t:ty) => {
+                *lib.get::<$t>($name).with_context(|| format!("missing symbol {}", String::from_utf8_lossy($name)))?
+            };
         }
+        Ok(Self {
+            backend_init: sym!(b"llama_backend_init", unsafe extern "C" fn(c_int)),
+            model_default_params: sym!(b"llama_model_default_params", unsafe extern "C" fn() -> LlamaModelParams),
+            model_load_from_file: sym!(b"llama_model_load_from_file", unsafe extern "C" fn(*const c_char, LlamaModelParams) -> *mut c_void),
+            model_get_vocab: sym!(b"llama_model_get_vocab", unsafe extern "C" fn(*mut c_void) -> *mut c_void),
+            context_default_params: sym!(b"llama_context_default_params", unsafe extern "C" fn() -> LlamaContextParams),
+            init_from_model: sym!(b"llama_init_from_model", unsafe extern "C" fn(*mut c_void, LlamaContextParams) -> *mut c_void),
+            free: sym!(b"llama_free", unsafe extern "C" fn(*mut c_void)),
+            vocab_n_tokens: sym!(b"llama_vocab_n_tokens", unsafe extern "C" fn(*mut c_void) -> i32),
+            tokenize: sym!(b"llama_tokenize", unsafe extern "C" fn(*mut c_void, *const c_char, i32, *mut LlamaToken, i32, bool, bool) -> i32),
+            token_to_piece: sym!(b"llama_token_to_piece", unsafe extern "C" fn(*mut c_void, LlamaToken, *mut c_char, i32, i32, bool) -> i32),
+            vocab_is_eog: sym!(b"llama_vocab_is_eog", unsafe extern "C" fn(*mut c_void, LlamaToken) -> bool),
+            sampler_chain_default_params: sym!(b"llama_sampler_chain_default_params", unsafe extern "C" fn() -> LlamaSamplerChainParams),
+            sampler_chain_init: sym!(b"llama_sampler_chain_init", unsafe extern "C" fn(LlamaSamplerChainParams) -> *mut c_void),
+            sampler_chain_add: sym!(b"llama_sampler_chain_add", unsafe extern "C" fn(*mut c_void, *mut c_void)),
+            sampler_init_temp: sym!(b"llama_sampler_init_temp", unsafe extern "C" fn(c_float) -> *mut c_void),
+            sampler_init_top_p: sym!(b"llama_sampler_init_top_p", unsafe extern "C" fn(c_float, usize) -> *mut c_void),
+            sampler_init_dist: sym!(b"llama_sampler_init_dist", unsafe extern "C" fn(u32) -> *mut c_void),
+            batch_get_one: sym!(b"llama_batch_get_one", unsafe extern "C" fn(*mut LlamaToken, i32) -> LlamaBatch),
+            decode: sym!(b"llama_decode", unsafe extern "C" fn(*mut c_void, LlamaBatch) -> i32),
+            get_logits_ith: sym!(b"llama_get_logits_ith", unsafe extern "C" fn(*mut c_void, i32) -> *mut c_float),
+            sampler_apply: sym!(b"llama_sampler_apply", unsafe extern "C" fn(*mut c_void, *mut LlamaTokenDataArray)),
+            sampler_accept: sym!(b"llama_sampler_accept", unsafe extern "C" fn(*mut c_void, LlamaToken)),
+        })
     }
 }
 
@@ -185,8 +189,8 @@ const SEED: u32 = 1234;
 const DEFAULT_LIB: &str = "/data/data/com.termux/files/usr/lib/libllama.so";
 
 pub struct NativeLlm {
-    _lib: Library, // must outlive `api`/handles
-    api: LlamaApi<'static>,
+    _lib: Library, // must outlive `api` (kept alive for the struct's lifetime)
+    api: LlamaApi,
     model: *mut c_void,
     vocab: *mut c_void,
     n_ctx: u32,
@@ -195,24 +199,24 @@ pub struct NativeLlm {
     system_prompt: String,
 }
 
-// Raw pointers are not Send/Sync; we access them from a single blocking task,
-// so declare the type Send (the pipeline runs each backend on one task).
+// Raw pointers are not Send by default; each instance is used from a single
+// blocking task, so it is safe to move it across threads once.
 unsafe impl Send for NativeLlm {}
 
 impl NativeLlm {
     pub fn new(cfg: &LlmConfig) -> Result<Self> {
         let lib_path = std::env::var("LLAMA_LIB_PATH").unwrap_or_else(|_| DEFAULT_LIB.to_string());
-        // SAFETY: we keep the Library alive for the struct's lifetime.
+        // SAFETY: the Library stays alive for the struct's lifetime.
         let lib = unsafe { Library::new(&lib_path) }
             .with_context(|| format!("failed to dlopen {lib_path}"))?;
-        let api = LlamaApi::load(&lib)?;
+        let api = unsafe { LlamaApi::load(&lib) }?;
 
         unsafe {
             api.backend_init(0);
 
             let mut params = api.model_default_params();
             params.n_gpu_layers = 0;
-            params.use_mmap = true;
+            // (no use_mmap field in llama.cpp 0.18.1; mmap is the default)
             let path = CString::new(cfg.model_path.to_string_lossy().as_bytes())
                 .context("model path contains NUL")?;
             let model = api.model_load_from_file(path.as_ptr(), params);
@@ -309,11 +313,7 @@ impl Llm for NativeLlm {
             // --- generation loop ---
             let n_vocab = self.api.vocab_n_tokens(self.vocab) as usize;
             let mut token_data = vec![
-                LlamaTokenData {
-                    id: 0,
-                    logit: 0.0,
-                    p: 0.0,
-                };
+                LlamaTokenData { id: 0, logit: 0.0, p: 0.0 };
                 n_vocab
             ];
             let mut cur_p = LlamaTokenDataArray {
@@ -383,10 +383,12 @@ impl Llm for NativeLlm {
                 }
             }
 
-            // flush decoder tail (unlikely to matter for TTS text)
+            // flush decoder tail (rare; emits any trailing partial multibyte char)
             let mut tail = String::new();
             let _ = decoder.decode_to_string(&[], &mut tail, true);
-            if !tail.is_empty() && !on_token(&tail) {}
+            if !tail.is_empty() {
+                let _ = on_token(&tail);
+            }
 
             self.api.free(ctx);
             Ok(())
