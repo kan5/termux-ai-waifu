@@ -18,11 +18,15 @@ mkdir -p "$WORKDIR"
 RAW="$WORKDIR/input.m4a"
 IN="$WORKDIR/input.wav"
 OUT="$WORKDIR/output.wav"
+# Auto-stop recording after this many seconds (0 = unlimited, stop with Ctrl-C).
+# A fixed limit makes the loop hands-free: speak, wait, hear the reply.
+RECORD_LIMIT="${RECORD_LIMIT:-8}"
 
 record() {
-    echo "▶ Говорите (Ctrl-C / второй Ctrl-C, чтобы остановить запись)..."
-    # Компактный формат m4a (termux-microphone-record не пишет WAV/PCM).
-    termux-microphone-record -f "$RAW" -e aac -r 16000 -c 1
+    echo "▶ Говорите $RECORD_LIMIT с..."
+    # termux-microphone-record writes compressed m4a (no WAV/PCM support); we
+    # decode to mono 16k WAV afterwards. -l auto-stops after RECORD_LIMIT sec.
+    termux-microphone-record -f "$RAW" -e aac -r 16000 -c 1 -l "$RECORD_LIMIT"
 }
 
 run_offline() {
